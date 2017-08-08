@@ -1,0 +1,149 @@
+#! /bin/bash
+
+############################################################
+######         ********* Work Log **********          ######
+############################################################
+##  - Manage your daily todos in a nice markdown format
+##  - Generate a report for [slack|stand]ups
+############################################################
+
+ACTION="view"
+## Options
+##----------------------------------------------------------
+while [[ $# -gt 0 ]] ; do
+   key="$1"
+   case $key in
+##     -e | --edit
+##        Edit your worklog
+       -e | --edit)
+       ACTION='edit'
+       ;;
+##     -a | --add
+##        Add new todo item
+       -a | --add)
+       ACTION='add'
+       while [[ ! -z "$2" ]]; do
+           task_to_add="$task_to_add $2"
+           shift
+       done
+       ;;
+##     -r | --report
+##        generate a report for the last 2 days
+       -r | --report)
+       ACTION='report'
+       ;;
+##
+##     -h | --help
+##        Display this help message
+       -h | --help)
+       egrep --color  '^#[#-]+' $0
+       exit 1
+       break
+       ;;
+       *)
+   esac
+   shift # past argument or value
+done
+##
+##----------------------------------------------------------
+## Environment Variables
+##----------------------------------------------------------
+##
+## WLOG_HOME
+##   Directory for all the wlogs.
+##   defaults to $HOME/wlog
+if [ -z $WLOG_HOME ]; then 
+    WLOG_HOME="$HOME/wlog"
+fi
+
+function ensure_today {
+    today=`today`
+
+    if [ ! -f $today ]; then 
+        echo "## To Do" > $today
+        echo >> $today
+        yesterday=`yesterday`
+        if [ -f $yesterday ]; then
+            echo "Looks like its a new day!"
+            echo -n "Would you like to edit yesterday before we copy unfinished items to today? [Yn]"
+            read confirm
+
+            if [ -z $confirm ]; then
+                confirm='y'
+            fi
+
+            [[ "$confirm" =~ ^(Y|y)$ ]] && $EDITOR $yesterday
+            cat $yesterday | grep -P '^- \[' | grep -v '\[x\]' >> $today
+        fi
+    fi
+}
+
+function today {
+    echo "$WLOG_HOME/`date +%Y-%m-%d.md`"
+}
+
+function yesterday {
+    yesterday="$WLOG_HOME/"`ls $WLOG_HOME | sort | tail -n2 | head -n 1`
+    if [ "$yesterday" != "$today" ]; then
+        echo $yesterday
+    fi
+}
+
+function report_file {
+    echo "#" `date --date="$(basename $1 | cut -d. -f 1)" +'%A %B %d, %Y'`
+    cat $1
+    echo
+    echo ------------------
+    echo
+}
+
+function ensure_setup {
+    if [ ! -d $WLOG_HOME ]; then
+        echo -n "$WLOG_HOME doesn't exist. Should I create it? [Yn]"
+        read confirm
+
+        if [ -z $confirm ]; then
+            confirm='y'
+        fi
+
+        [[ ! "$confirm" =~ ^(Y|y)$ ]] && exit
+        mkdir $WLOG_HOME
+    fi
+
+    # ensure today has been created
+    ensure_today
+}
+
+function view {
+    report_file $today
+}
+
+function edit {
+    $EDITOR $today
+}
+
+function add {
+    echo "- [ ]$task_to_add" >> $today
+}
+
+function report {
+    yesterday=`yesterday`
+
+    [ ! -x $yesterday ] && [ -f $yesterday ] && report_file $yesterday
+    report_file $today
+}
+
+function print_config {
+    echo WLOG_HOME $WLOG_HOME;
+}
+
+
+ensure_setup
+
+
+type "$ACTION" 1>/dev/null || exit 1
+
+$ACTION
+# the end
+##
+############################################################
