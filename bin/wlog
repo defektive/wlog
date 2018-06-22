@@ -11,36 +11,71 @@ ACTION="view"
 ## Options
 ##----------------------------------------------------------
 while [[ $# -gt 0 ]] ; do
-   key="$1"
-   case $key in
+  key="$1"
+  case $key in
 ##     -e | --edit
 ##        Edit your worklog
-       -e | --edit)
-       ACTION='edit'
-       ;;
+    -e | --edit)
+      ACTION='edit'
+      ;;
+##     -E | --edit-script
+##        Edit this script
+    -E | --edit-script)
+      ACTION='edit_script'
+      ;;
+##     -y | --yesterday
+##        Edit your worklog
+    -y | --yesterday)
+      YESTERDAY=1
+      ;;
+##     -dS | --date-start
+##        Add new todo item
+    -dS | --date-start)
+      date_start=`date -d "$2" +%Y-%m-%d`
+      ;;
 ##     -a | --add
 ##        Add new todo item
-       -a | --add)
-       ACTION='add'
-       while [[ ! -z "$2" ]]; do
-           task_to_add="$task_to_add $2"
-           shift
-       done
-       ;;
+    -a | --add)
+      ACTION='add'
+      while [[ ! -z "$2" ]]; do
+        task_to_add="$task_to_add $2"
+        shift
+      done
+      ;;
+##     -s | --snippet
+##        Add a new snippet
+    -s | --snippet)
+      ACTION='snippet'
+      snippet_name='snippet'
+      while [[ ! -z "$2" ]]; do
+        snippet_name="$snippet_name $2"
+        shift
+      done
+      ;;
 ##     -r | --report
 ##        generate a report for the last 2 days
-       -r | --report)
-       ACTION='report'
-       ;;
+    -r | --report)
+      ACTION='report'
+      ;;
+##     -S | --summary
+##        detailed summary
+    -S | --summary)
+      ACTION='summary'
+      ;;
+##     -U | --upgrade
+##        Upgrade wlog files. backup recommended
+    -U | --upgrade)
+      ACTION='upgrade_old_wlogs'
+      ;;
 ##
 ##     -h | --help
 ##        Display this help message
-       -h | --help)
-       egrep --color  '^#[#-]+' $0
-       exit 1
-       break
-       ;;
-       *)
+    -h | --help)
+      egrep --color  '^#[#-]+' $0
+      exit 1
+      break
+      ;;
+    *)
    esac
    shift # past argument or value
 done
@@ -52,98 +87,164 @@ done
 ## WLOG_HOME
 ##   Directory for all the wlogs.
 ##   defaults to $HOME/wlog
-if [ -z $WLOG_HOME ]; then 
-    WLOG_HOME="$HOME/wlog"
+if [ -z $WLOG_HOME ]; then
+  WLOG_HOME="$HOME/wlog"
 fi
 
 function ensure_today {
-    today=`today`
+  today_dir=`today_dir`
+  today_todo="$today_dir/00-todo.md"
 
-    if [ ! -f $today ]; then 
-        echo "## To Do" > $today
-        echo >> $today
-        yesterday=`yesterday`
-        if [ -f $yesterday ]; then
-            echo "Looks like its a new day!"
-            echo -n "Would you like to edit yesterday before we copy unfinished items to today? [Yn]"
-            read confirm
+  if [ ! -d $today_dir ]; then
+    mkdir -p $today_dir
+    echo "## To Do" > $today_todo
+    echo >> $today_todo
+    yesterday=`yesterday`
+    if [ -f $yesterday ]; then
+      echo "Looks like its a new day!"
+      echo -n "Would you like to edit $yesterday before we copy unfinished items to today? [Yn]"
+      read confirm
 
-            if [ -z $confirm ]; then
-                confirm='y'
-            fi
+      if [ -z $confirm ]; then
+        confirm='y'
+      fi
 
-            [[ "$confirm" =~ ^(Y|y)$ ]] && $EDITOR $yesterday
-            cat $yesterday | grep -P '^- \[' | grep -v '\[x\]' >> $today
-        fi
+      [[ "$confirm" =~ ^(Y|y)$ ]] && $EDITOR $yesterday
+      cat $yesterday | grep -P '^- \[' | grep -v '\[x\]' >> $today_todo
     fi
+  fi
 }
 
-function today {
-    echo "$WLOG_HOME/`date +%Y-%m-%d.md`"
+function today_dir {
+  echo "$WLOG_HOME/`date +%Y-%m-%d`/"
 }
 
 function yesterday {
-    yesterday="$WLOG_HOME/"`ls $WLOG_HOME | sort | tail -n2 | head -n 1`
-    if [ "$yesterday" != "$today" ]; then
-        echo $yesterday
-    fi
+  yesterday=`find $WLOG_HOME -maxdepth 1 -type d -exec realpath {} \; | egrep -v '(\.git|assets)' | sort | tail -n 2 | head -n 1`
+  if [ "$yesterday" != "$today_dir" ]; then
+    echo $yesterday/00-todo.md
+  fi
 }
 
 function report_file {
-    echo "#" `date --date="$(basename $1 | cut -d. -f 1)" +'%A %B %d, %Y'`
-    cat $1
-    echo
-    echo ------------------
-    echo
+  echo "#" `date --date="$(basename $(dirname $1))" +'%A %B %d, %Y'`
+  cat $1
+  echo
+  echo ------------------
+  echo
 }
 
 function ensure_setup {
-    if [ ! -d $WLOG_HOME ]; then
-        echo -n "$WLOG_HOME doesn't exist. Should I create it? [Yn]"
-        read confirm
+  if [ ! -d $WLOG_HOME ]; then
+    echo -n "$WLOG_HOME doesn't exist. Should I create it? [Yn]"
+    read confirm
 
-        if [ -z $confirm ]; then
-            confirm='y'
-        fi
-
-        [[ ! "$confirm" =~ ^(Y|y)$ ]] && exit
-        mkdir $WLOG_HOME
+    if [ -z $confirm ]; then
+      confirm='y'
     fi
 
-    # ensure today has been created
-    ensure_today
+    [[ ! "$confirm" =~ ^(Y|y)$ ]] && exit
+    mkdir $WLOG_HOME
+  fi
+
+  # ensure today has been created
+  ensure_today
 }
 
 function view {
-    report_file $today
+  report_file $today_todo
 }
 
 function edit {
-    $EDITOR $today
+  $EDITOR $today_todo
+}
+
+function edit_script {
+  $EDITOR `which $0`
 }
 
 function add {
-    echo "- [ ]$task_to_add" >> $today
+  echo "- [ ]$task_to_add" >> $today_todo
+}
+
+function snippet {
+  $EDITOR "$today_dir/$snippet_name.md"
 }
 
 function report {
-    yesterday=`yesterday`
+  today_s=$(date +%s)
 
+  if [ ! -z $date_start ]; then
+    while true; do
+      date_s=$(date -d "$date_start" +%s)
+      if [ $today_s -le $date_s ]; then
+        break
+      fi
+
+      if [ -d "$WLOG_HOME/$date_start" ]; then
+        [ -f  "$WLOG_HOME/$date_start/"00-todo.md ] && report_file "$WLOG_HOME/$date_start/"00-todo.md
+      fi
+      date_start=`date -d "$date_start + 1 day" +%Y-%m-%d`
+    done
+  else
+    yesterday=`yesterday`
     [ ! -x $yesterday ] && [ -f $yesterday ] && report_file $yesterday
-    report_file $today
+  fi
+
+  report_file $today_todo
+}
+
+function summary {
+  today_s=$(date +%s)
+
+  if [ ! -z $date_start ]; then
+    while true; do
+      date_s=$(date -d "$date_start" +%s)
+      if [ $today_s -le $date_s ]; then
+        break
+      fi
+
+      if [ -d "$WLOG_HOME/$date_start" ]; then
+        echo
+        echo "# $date_start"
+        cat "$WLOG_HOME/$date_start/"*.md
+        echo ----------
+
+      fi
+      date_start=`date -d "$date_start + 1 day" +%Y-%m-%d`
+    done
+  else
+    echo "# $date_start"
+    cat "$today_dir/"*.md
+  fi
 }
 
 function print_config {
-    echo WLOG_HOME $WLOG_HOME;
+  echo WLOG_HOME $WLOG_HOME;
 }
 
+function upgrade_old_wlogs {
+  cd $WLOG_HOME
+  echo [+] Attempting Upgrades
+  ls 201*.md 2>&1 > /dev/null
+  if [ $? -eq 0 ]; then
+    echo [+] Moving old posts to dirs
+    ls 201*.md | while read file; do dir=$(echo $file | cut -d. -f1); mkdir $dir; mv $file $dir/todo.md;  done
+    echo [+] done
+  fi
+  ls */todo.md 2>&1 > /dev/null
+  if [ $? -eq 0 ]; then
+    echo [+] Moving todo.md to 00-todo.md
+    ls */todo.md | while read file; do new_file=$(echo $file | sed 's/todo\.md/00-todo.md/'); mv $file $new_file;  done
+    echo [+] done
+  fi
+}
 
 ensure_setup
-
-
 type "$ACTION" 1>/dev/null || exit 1
 
 $ACTION
 # the end
 ##
 ############################################################
+# vim: set expandtab shiftwidth=2 softabstop=2
